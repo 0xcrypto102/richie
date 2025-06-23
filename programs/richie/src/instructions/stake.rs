@@ -2,9 +2,10 @@ use anchor_lang::prelude::*;
 
 use anchor_spl::token::{transfer, Mint, Token, TokenAccount, Transfer};
 
-use crate::{ state::*, constants::* };
+use crate::{ state::*, constants::* , error::RichieError};
 
 #[derive(Accounts)]
+#[instruction(index: u64)]
 pub struct Stake<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
@@ -17,7 +18,7 @@ pub struct Stake<'info> {
     pub config: Account<'info, Config>,
 
     #[account(mut)]
-    pub token_mint: Account<'info, Mint>,
+    pub stake_token_mint: Account<'info, Mint>,
 
     #[account(
         init_if_needed,
@@ -35,50 +36,71 @@ pub struct Stake<'info> {
         mut,
         seeds = [VAULT.as_bytes()],
         bump,
-        token::mint = token_mint,
-        token::authority = config
     )]
-    pub token_vault: Account<'info, TokenAccount>,
+    pub stake_vault: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        seeds = [EPOCH.as_bytes(), &index.to_le_bytes()],
+        bump
+    )]
+    pub epoch: Account<'info, Epoch>,
+
+    #[account(
+        mut,
+        seeds = [STAKE.as_bytes()],
+        bump
+    )]
+    pub stakes: Account<'info, Stakes>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
 
-pub fn stake(ctx: Context<Stake>, amount: u64) -> Result<()> {
+pub fn stake(ctx: Context<Stake>, index: u64, amount: u64) -> Result<()> {
     let clock = Clock::get()?;
     let user_stake = &mut ctx.accounts.user_stake;
+    let config = &mut ctx.accounts.config;
+    let epoch = &mut ctx.accounts.epoch;
+    let stakes = &mut ctx.accounts.stakes;
 
-    // Update rewards before adding
-    update_rewards(user_stake, clock.unix_timestamp, ctx.accounts.config.apr_bps)?;
+    require!(clock.unix_timestamp >= epoch.staked_start_time, RichieError::InvalidStakeTime);
+    require!(clock.unix_timestamp <= epoch.staked_start_time + epoch.stake_duration, RichieError::InvalidStakeTime);
+    require!(index == config.index, RichieError::InvalidEpochIndex);
 
-    user_stake.amount += amount;
-    user_stake.last_update = clock.unix_timestamp;
+    if user_stake.status == true {
+        user_stake.status = false;
+        user_stake.user_curve = user_stake.amount * epoch.stake_duration as u64;
+    }
+
+    if user_stake.amount == 0 {
+        user_stake.owner = ctx.accounts.user.key();
+        user_stake.amount = amount;
+
+        stakes.list.push(user_stake.key());
+    } else {
+        user_stake.amount += amount;
+    }
+
+    let available_time = epoch.stake_duration - (clock.unix_timestamp - epoch.staked_start_time); 
+    
+    epoch.total_curve += amount * available_time as u64;
+    epoch.total_staked_amount += amount;
+
+    user_stake.user_curve += amount * available_time as u64;
+
+    user_stake.last_staked_time = clock.unix_timestamp;
 
     // Transfer tokens
     let cpi_accounts = Transfer {
         from: ctx.accounts.from_token_account.to_account_info(),
-        to: ctx.accounts.token_vault.to_account_info(),
+        to: ctx.accounts.stake_vault.to_account_info(),
         authority: ctx.accounts.user.to_account_info(),
     };
     let cpi_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts);
     transfer(cpi_ctx, amount)?;
 
-    Ok(())
-}
+    config.total_staked += amount;
 
-
-fn update_rewards(user: &mut Account<UserStake>, now: i64, apr_bps: u64) -> Result<()> {
-    let seconds_elapsed = (now - user.last_update).max(0) as u64;
-    let yearly_seconds = 365 * 24 * 60 * 60;
-
-    let earned = user.amount
-        .checked_mul(apr_bps)
-        .unwrap()
-        .checked_mul(seconds_elapsed)
-        .unwrap()
-        / 10_000
-        / yearly_seconds;
-
-    user.pending_reward += earned;
     Ok(())
 }

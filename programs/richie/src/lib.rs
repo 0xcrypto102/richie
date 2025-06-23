@@ -15,7 +15,53 @@ declare_id!("DBCxLXexkfhav6oN9vrAmPW2ae6MQzV3HikTzFR4uaGa");
 pub mod richie {
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>,apr_bps: u64, reward_wallet: Pubkey, reward_mint: Pubkey) -> Result<()> {
-        initialize::initialize(ctx, apr_bps, reward_wallet, reward_mint)
+    pub fn initialize_stake_vault(
+        ctx: Context<InitializeStakeVault>,
+        apr_bps: u64, 
+        epoch_duration: i64
+    ) -> Result<()> {
+        instructions::initialize_stake_vault(ctx, apr_bps, epoch_duration)
+    }
+
+    pub fn initialize_reward_vault(
+        ctx: Context<InitializeRewardVault>,
+    ) -> Result<()> {
+        instructions::initialize_reward_vault(ctx)
+    }
+
+    pub fn update_epoch_duration(
+        ctx: Context<ManageConfig>,
+        duration: i64
+    ) -> Result<()> {
+        instructions::update_epoch_duration(ctx, duration)
+    }
+
+    pub fn toggle(
+        ctx: Context<Toggle>,
+        index: u64,
+        reward_amount: u64
+    ) -> Result<()> {
+        instructions::toggle(ctx, index, reward_amount)
+    }
+
+    pub fn manage_staker_reward(
+        ctx: Context<ManageStakerReward>,
+        index: u64
+    ) -> Result<()> {
+        instructions::manage_staker_reward(ctx, index)
+    }
+
+    pub fn stake(
+        ctx: Context<Stake>,
+        index: u64,
+        amount: u64
+    ) -> Result<()> {
+        instructions::stake(ctx, index, amount)
+    }
+
+    pub fn claim(
+        ctx: Context<Claim>
+    ) -> Result<()> {
+        instructions::claim(ctx)
     }
 }

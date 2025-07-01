@@ -9,7 +9,7 @@ pub use constants::*;
 use instructions::*;
 pub use state::*;
 
-declare_id!("DBCxLXexkfhav6oN9vrAmPW2ae6MQzV3HikTzFR4uaGa");
+declare_id!("5WZ32L1T2Em5zFzF4NpFq8VX6NxfvAzHWgr7Zkqci37R");
 
 #[program]
 pub mod richie {
@@ -36,6 +36,13 @@ pub mod richie {
         instructions::update_epoch_duration(ctx, duration)
     }
 
+    pub fn update_multiplier(
+        ctx: Context<ManageConfig>,
+        new_multiplier: Vec<u64>
+    ) -> Result<()> {
+        instructions::update_multiplier(ctx, new_multiplier)
+    }
+
     pub fn toggle(
         ctx: Context<Toggle>,
         index: u64,
@@ -54,14 +61,19 @@ pub mod richie {
     pub fn stake(
         ctx: Context<Stake>,
         index: u64,
-        amount: u64
+        amount: u64,
+        lock_period: u8
     ) -> Result<()> {
-        instructions::stake(ctx, index, amount)
+        instructions::stake(ctx, index, amount, lock_period)
     }
 
     pub fn claim(
         ctx: Context<Claim>
     ) -> Result<()> {
         instructions::claim(ctx)
+    }
+
+    pub fn withdraw(ctx: Context<Withdraw>, index: u64) -> Result<()> {
+        instructions::withdraw(ctx, index)
     }
 }

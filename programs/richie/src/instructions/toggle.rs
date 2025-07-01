@@ -114,28 +114,69 @@ pub fn toggle(ctx: Context<Toggle>, index: u64, reward_amount: u64) -> Result<()
 
     epoch.reward = reward_amount;
     epoch.total_staked_amount = config.total_staked;
-    epoch.total_curve = epoch.total_staked_amount * duration as u64;
-
+    epoch.total_curve = config.total_curve;
+    config.total_curve = 0;
+    
     Ok(())
 }
 
 pub fn manage_staker_reward(ctx: Context<ManageStakerReward>, index: u64) -> Result<()> {
-    let config = &ctx.accounts.config;
-    let epoch = &ctx.accounts.epoch;
+    let clock = Clock::get()?;
+    let config = &mut ctx.accounts.config;
+    let epoch = &mut ctx.accounts.epoch;
     let user_stake = &mut ctx.accounts.user_stake;
     let stakes = &ctx.accounts.stakes;
-    let owner = &mut ctx.accounts.admin;
+    let admin = &ctx.accounts.admin;
 
+    // Validation
     require!(stakes.list.contains(&user_stake.key()), RichieError::InvalidUserStake);
     require!(config.index == index, RichieError::InvalidEpochIndex);
-    require!(owner.key() == config.admin, RichieError::UnAuthorized);
-    require!(user_stake.status != true, RichieError::AlreadyCalculated);
+    require!(admin.key() == config.admin, RichieError::UnAuthorized);
+    require!(
+        epoch.staked_start_time + epoch.stake_duration < clock.unix_timestamp,
+        RichieError::UnFinishedEpoch
+    );
 
     let duration = config.epoch_duration;
 
-    user_stake.pending_reward += user_stake.user_curve * epoch.reward / epoch.total_curve;
-    user_stake.user_curve = user_stake.amount * duration as u64;
-    user_stake.status = true;
+    let mut reward_sum: u64 = 0;
+    for entry in user_stake.stake_entries.iter_mut() {
+        if entry.calculated_index == index {
+            msg!("It was already calculated")
+        } else {
+            if entry.last_staked_epoch_index + entry.lock_period as u64 - 1 >= index {
+                let reward_share = (entry.boosted_curve as u128)
+                    .checked_mul(epoch.reward as u128)
+                    .unwrap_or(0)
+                    .checked_div(epoch.total_curve as u128)
+                    .unwrap_or(0) as u64;
+
+                reward_sum += reward_share;
+
+                entry.base_curve = entry.amount * duration as u64;
+                entry.boosted_curve = entry.base_curve * entry.multiplier;
+            } else {
+                let reward_share = (entry.base_curve as u128)
+                    .checked_mul(epoch.reward as u128)
+                    .unwrap_or(0)
+                    .checked_div(epoch.total_curve as u128)
+                    .unwrap_or(0) as u64;
+
+                reward_sum += reward_share;
+
+                entry.base_curve = entry.amount * duration as u64;
+                entry.boosted_curve = entry.base_curve;
+            }
+            config.total_curve += entry.boosted_curve;
+            entry.calculated_index = index;
+        }
+    }
+
+    user_stake.pending_reward = user_stake.pending_reward.saturating_add(reward_sum);
+
+    if !epoch.claimable {
+        epoch.claimable = true;
+    }
 
     Ok(())
 }

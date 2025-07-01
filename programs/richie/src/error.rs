@@ -4,6 +4,8 @@ use anchor_lang::prelude::*;
 pub enum RichieError {
     #[msg("UnAuthorized.")]
     UnAuthorized,
+    #[msg("Too many multipliers provided")]
+    TooManyMultipliers,
     #[msg("Not enough tokens staked.")]
     InsufficientStake,
     #[msg("Epoch duration has not passed yet.")]
@@ -17,5 +19,11 @@ pub enum RichieError {
     #[msg("This is invalid user stake account.")]
     InvalidUserStake,
     #[msg("The reward was already calculated.")]
-    AlreadyCalculated
+    AlreadyCalculated,
+    #[msg("The epoch is not finished yet.")]
+    UnFinishedEpoch,
+    #[msg("Invalid lock period")]
+    InvalidLockPeriod,
+    #[msg("No stake available for withdrawal.")]
+    NothingToWithdraw,
 }

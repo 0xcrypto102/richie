@@ -57,39 +57,45 @@ pub struct Stake<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn stake(ctx: Context<Stake>, index: u64, amount: u64) -> Result<()> {
+pub fn stake(ctx: Context<Stake>, index: u64, amount: u64, lock_period: u8) -> Result<()> {
     let clock = Clock::get()?;
     let user_stake = &mut ctx.accounts.user_stake;
     let config = &mut ctx.accounts.config;
     let epoch = &mut ctx.accounts.epoch;
     let stakes = &mut ctx.accounts.stakes;
 
-    require!(clock.unix_timestamp >= epoch.staked_start_time, RichieError::InvalidStakeTime);
-    require!(clock.unix_timestamp <= epoch.staked_start_time + epoch.stake_duration, RichieError::InvalidStakeTime);
+    require!(
+        clock.unix_timestamp >= epoch.staked_start_time &&
+        clock.unix_timestamp <= epoch.staked_start_time + epoch.stake_duration,
+        RichieError::InvalidStakeTime
+    );
     require!(index == config.index, RichieError::InvalidEpochIndex);
 
-    if user_stake.status == true {
-        user_stake.status = false;
-        user_stake.user_curve = user_stake.amount * epoch.stake_duration as u64;
-    }
-
-    if user_stake.amount == 0 {
+    if user_stake.stake_entries.is_empty() {
         user_stake.owner = ctx.accounts.user.key();
-        user_stake.amount = amount;
-
         stakes.list.push(user_stake.key());
-    } else {
-        user_stake.amount += amount;
     }
 
-    let available_time = epoch.stake_duration - (clock.unix_timestamp - epoch.staked_start_time); 
-    
-    epoch.total_curve += amount * available_time as u64;
+    let available_time = epoch.stake_duration - (clock.unix_timestamp - epoch.staked_start_time);
+    let multiplier = get_multiplier(config, lock_period)?; // e.g., 150 for 1.5x
+
+    let base_curve = amount * available_time as u64;
+    let boosted_curve = base_curve * multiplier / 100; // Apply multiplier as percentage
+
+    // Append new stake entry
+    user_stake.stake_entries.push(StakeEntry {
+        amount,
+        last_staked_epoch_index: index,
+        lock_period,
+        multiplier,
+        base_curve,
+        boosted_curve,
+        calculated_index: 0
+    });
+
+    // Update epoch stats
+    epoch.total_curve += boosted_curve;
     epoch.total_staked_amount += amount;
-
-    user_stake.user_curve += amount * available_time as u64;
-
-    user_stake.last_staked_time = clock.unix_timestamp;
 
     // Transfer tokens
     let cpi_accounts = Transfer {
@@ -103,4 +109,15 @@ pub fn stake(ctx: Context<Stake>, index: u64, amount: u64) -> Result<()> {
     config.total_staked += amount;
 
     Ok(())
+}
+
+fn get_multiplier(config: &Config, lock_period: u8) -> Result<u64> {
+    match lock_period {
+        1 => Ok(*config.multiplier.get(0).ok_or(RichieError::InvalidLockPeriod)?),
+        2 => Ok(*config.multiplier.get(1).ok_or(RichieError::InvalidLockPeriod)?),
+        4 => Ok(*config.multiplier.get(2).ok_or(RichieError::InvalidLockPeriod)?),
+        8 => Ok(*config.multiplier.get(3).ok_or(RichieError::InvalidLockPeriod)?),
+        16 => Ok(*config.multiplier.get(4).ok_or(RichieError::InvalidLockPeriod)?),
+        _ => Err(RichieError::InvalidLockPeriod.into()),
+    }
 }

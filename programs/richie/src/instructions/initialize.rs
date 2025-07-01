@@ -98,12 +98,23 @@ pub fn initialize_stake_vault(
     config.apr_bps = apr_bps;
     config.epoch_duration = epoch_duration;
     config.last_epoch_time = clock.unix_timestamp;
+
     config.stake_token_mint = ctx.accounts.stake_token_mint.key();
     config.stake_vault = ctx.accounts.stake_vault.key();
+
+    // You may update these if you add them as inputs in the future
+    config.reward_token_mint = Pubkey::default(); // Placeholder
+    config.reward_vault = Pubkey::default();      // Placeholder
+
     config.total_staked = 0;
+    config.index = 0;
+
+    // Set default multipliers (100% base, 120%, 150%, etc.)
+    config.multiplier = vec![100, 120, 150, 200, 300];
 
     Ok(())
 }
+
 
 pub fn initialize_reward_vault(
     ctx: Context<InitializeRewardVault>, 
@@ -128,3 +139,29 @@ pub fn update_epoch_duration(
     
     Ok(())
 }
+
+pub fn update_multiplier(
+    ctx: Context<ManageConfig>,
+    new_multiplier: Vec<u64>,
+) -> Result<()> {
+    let config = &mut ctx.accounts.config;
+
+    // Check admin permission
+    require_keys_eq!(
+        ctx.accounts.admin.key(),
+        config.admin,
+        RichieError::UnAuthorized
+    );
+
+    // Optional: Limit number of multipliers
+    require!(
+        new_multiplier.len() <= Config::MAX_MULTIPLIERS,
+        RichieError::TooManyMultipliers
+    );
+
+    // Update multiplier
+    config.multiplier = new_multiplier;
+
+    Ok(())
+}
+

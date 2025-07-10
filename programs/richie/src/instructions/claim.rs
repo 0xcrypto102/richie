@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 
 use anchor_spl::{
     associated_token::AssociatedToken,
-    token::{transfer, Token, Mint, TokenAccount, Transfer}
+    token::{transfer, Token, Mint, TokenAccount, Transfer, burn, Burn}
 };
 
 use crate::{ constants::*, error::RichieError, state::* };
@@ -47,8 +47,6 @@ pub struct Withdraw<'info> {
 
     #[account(mut)]
     pub to_token_account: Account<'info, TokenAccount>, // user's $RICHIE
-
-    pub associated_token_program: Program<'info, AssociatedToken>,
     pub token_program: Program<'info, Token>,
 }
 
@@ -118,7 +116,7 @@ pub fn claim(ctx: Context<Claim>) -> Result<()> {
 }
 
 pub fn withdraw(ctx: Context<Withdraw>, index: u64) -> Result<()> {
-    let config = &ctx.accounts.config;
+    let config = &mut ctx.accounts.config;
     let user_stake = &mut ctx.accounts.user_stake;
     let stake_vault = &ctx.accounts.stake_vault;
     let to_token_account = &ctx.accounts.to_token_account;
@@ -130,30 +128,52 @@ pub fn withdraw(ctx: Context<Withdraw>, index: u64) -> Result<()> {
     let mut total_withdraw: u64 = 0;
     let mut total_penalty: u64 = 0;
 
-    // Remove matching stake entries and sum withdrawable amount
+    msg!("🔍 Starting withdrawal for user: {}", ctx.accounts.user.key());
+    msg!("📆 Current epoch index: {}", current_index);
+    msg!("🎯 Target epoch index to withdraw from: {}", index);
+    msg!("🧾 Stake entries before withdrawal: {}", user_stake.stake_entries.len());
+
     user_stake.stake_entries.retain(|entry| {
         if entry.last_staked_epoch_index == index {
             let end_epoch = entry.last_staked_epoch_index + entry.lock_period as u64;
             let mut unearned_curve = 0;
+
             if current_index < end_epoch {
-                // Early withdrawal: 5% penalty
                 let penalty = entry.amount * 5 / 100;
                 total_penalty += penalty;
                 total_withdraw += entry.amount - penalty;
 
-                unearned_curve = entry.amount * (epoch.staked_end_time - clock.unix_timestamp) as u64 * entry.multiplier;
+                unearned_curve = entry.boosted_curve;
+
+                msg!(
+                    "⚠️ Early withdrawal: lock ends at epoch {}, applying 5% penalty ({} lamports)",
+                    end_epoch,
+                    penalty
+                );
             } else {
-                // No penalty
                 total_withdraw += entry.amount;
-                unearned_curve = entry.amount * (epoch.staked_end_time - clock.unix_timestamp) as u64;
+                unearned_curve = entry.base_curve;
+
+                msg!(
+                    "✅ On-time withdrawal: lock ended at epoch {}, no penalty",
+                    end_epoch
+                );
             }
-            epoch.total_curve -= unearned_curve;
+            config.total_staked -= entry.amount;
+
+            epoch.total_curve = epoch.total_curve.saturating_sub(unearned_curve);
+            msg!("📉 Subtracted unearned curve: {}", unearned_curve);
 
             false // remove this entry
         } else {
-            true // keep this entry
+            true // keep
         }
     });
+
+    msg!("💰 Total withdrawable amount: {}", total_withdraw);
+    msg!("🧾 Total penalty collected: {}", total_penalty);
+    msg!("📊 Updated epoch.total_curve: {}", epoch.total_curve);
+    msg!("🧾 Stake entries after withdrawal: {}", user_stake.stake_entries.len());
 
     require!(total_withdraw > 0, RichieError::NothingToWithdraw);
 
@@ -169,6 +189,26 @@ pub fn withdraw(ctx: Context<Withdraw>, index: u64) -> Result<()> {
     };
     let cpi_ctx = CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), cpi_accounts, signer);
     anchor_spl::token::transfer(cpi_ctx, total_withdraw)?;
+
+    msg!("✅ Successfully transferred {} lamports to user.", total_withdraw);
+
+    // Burn the penalty tokens
+    if total_penalty > 0 {
+        msg!("🔥 Burning {} penalty tokens from vault...", total_penalty);
+
+        let burn_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            Burn {
+                mint: ctx.accounts.stake_token_mint.to_account_info(),
+                from: stake_vault.to_account_info(),
+                authority: ctx.accounts.config.to_account_info(),
+            },
+            signer,
+        );
+
+        burn(burn_ctx, total_penalty)?;
+        msg!("🔥 Burned penalty tokens successfully.");
+    }
 
     Ok(())
 }

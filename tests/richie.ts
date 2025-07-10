@@ -119,7 +119,6 @@ describe("richie", () => {
   });
   */
   /*
-  
   it("stake in epoch1", async() => {
     try {
       const index = new anchor.BN(1);
@@ -136,9 +135,11 @@ describe("richie", () => {
         [Buffer.from("epoch"), index.toArrayLike(Buffer, "le", 8)],
         program.programId
       );
+      const lockPeriod = 4;
       const tx = await program.rpc.stake(
         index,
-        new anchor.BN(amount), {
+        new anchor.BN(amount), 
+        lockPeriod, {
           accounts: {
             user: user1.publicKey,
             config,
@@ -178,9 +179,12 @@ describe("richie", () => {
         [Buffer.from("epoch"), index.toArrayLike(Buffer, "le", 8)],
         program.programId
       );
+      const lockPeriod = 1;
+
       const tx = await program.rpc.stake(
         index,
-        new anchor.BN(amount), {
+        new anchor.BN(amount), 
+        lockPeriod, {
           accounts: {
             user: user2.publicKey,
             config,
@@ -207,7 +211,46 @@ describe("richie", () => {
     }
   });
   */
-  /*
+  it("user 1 withdraw token", async() => {
+    try {
+      const index = new anchor.BN(1);
+      
+      const [userStake] = PublicKey.findProgramAddressSync(
+        [Buffer.from("user"), user1.publicKey.toBuffer()],
+        program.programId
+      );
+      const [epoch] = PublicKey.findProgramAddressSync(
+        [Buffer.from("epoch"), index.toArrayLike(Buffer, "le", 8)],
+        program.programId
+      );
+      const userStakeData = await program.account.userStake.fetch(userStake);
+      console.log("userStakeData->", userStakeData);
+      const toTokenAccount = getAssociatedTokenAddressSync(
+        stakeTokenMint,
+        user1.publicKey
+      );
+
+      const tx = await program.rpc.withdraw(
+        new anchor.BN(1), {
+          accounts: {
+            user: user1.publicKey,
+            config,
+            epoch,
+            userStake,
+            stakeTokenMint,
+            stakeVault,
+            toTokenAccount,
+            tokenProgram: TOKEN_PROGRAM_ID
+          },
+          signers: [user1]
+        }
+      );
+      console.log("tx->", tx);
+    } catch (error) {
+      console.log("error:", error);
+    }
+  });
+ /*
   it("Manage rewards", async() => {
     try {
       const users = await program.account.userStake.all();
@@ -244,7 +287,8 @@ describe("richie", () => {
     }
   });
   */
-  /*
+ /*
+
   it("User 1 Cliam the reward", async() => {
     try {
       const index = new anchor.BN(1);
@@ -309,95 +353,20 @@ describe("richie", () => {
       console.log("error:", error);
     }
   });
-  */
-  /*
-  it("Create the second epoch", async() => {
+  it("Update duration", async() => {
     try {
-      const index = new anchor.BN(2);
-      const rewardAmount = 100 * 10 ** 9; // 100 tokens as reward
-
-      const [epoch] = PublicKey.findProgramAddressSync(
-        [Buffer.from("epoch"), index.toArrayLike(Buffer, "le", 8)],
-        program.programId
-      );
-
-      const rewardMintTokenAccount = getAssociatedTokenAddressSync(
-        rewardTokenMint,
-        owner.publicKey
-      );
-
-      const tx = await program.rpc.toggle(
-        index,
-        new anchor.BN(rewardAmount), {
-          accounts: {
-            owner: owner.publicKey,
-            config,
-            epoch,
-            rewardMint: rewardTokenMint,
-            rewardMintTokenAccount,
-            rewardVault,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            systemProgram: SystemProgram.programId
-          },
-          signers: [owner]
-        }
-      );
-      console.log("tx->", tx)
-    } catch (error) {
-      console.log("error->", error);
-    }
-  });
-  */
- /*
-   it("Manage rewards", async() => {
-    try {
-      const users = await program.account.userStake.all();
-      for(let i = 0; i<users.length; i++) {
-        const user = users[i];
-        const index = new anchor.BN(2);
-        const userStake = user.publicKey
-     
-        const [epoch] = PublicKey.findProgramAddressSync(
-          [Buffer.from("epoch"), index.toArrayLike(Buffer, "le", 8)],
-          program.programId
-        );
-
-        const tx = await program.rpc.manageStakerReward(
-          index,
-          {
-            accounts: {
-              admin: owner.publicKey,
-              config,
-              epoch,
-              user: user.account.owner,
-              userStake,
-              stakes,
-              tokenProgram: TOKEN_PROGRAM_ID,
-              systemProgram: SystemProgram.programId
-            },
-            signers: [owner]
-          }
-        );
-        console.log("tx->", tx);
-      }
+      const duration = 14 * 24 * 60 * 60; // 14 days
+      const tx = await program.rpc.updateEpochDuration(new anchor.BN(duration), {
+        accounts: {
+          config,
+          admin: owner.publicKey
+        },
+        signers: [owner]
+      });
+      console.log("tx->", tx);
     } catch (error) {
       console.log("error:", error);
     }
-  });
+  })
   */
- it("Update duration", async() => {
-  try {
-    const duration = 30 * 60 * 60; // 2 hours
-    const tx = await program.rpc.updateEpochDuration(new anchor.BN(duration), {
-      accounts: {
-        config,
-        admin: owner.publicKey
-      },
-      signers: [owner]
-    });
-    console.log("tx->", tx);
-  } catch (error) {
-    console.log("error:", error);
-  }
- })
 });

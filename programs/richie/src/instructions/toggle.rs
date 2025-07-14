@@ -93,24 +93,34 @@ pub fn toggle(ctx: Context<Toggle>, index: u64, reward_amount: u64) -> Result<()
     let owner = &mut ctx.accounts.owner;
 
     require!(owner.key() == config.admin, RichieError::UnAuthorized);
-    require!(index == config.index + 1, RichieError::InvalidEpochIndex);
+    require!(index == config.index, RichieError::InvalidEpochIndex); // we use index 0 as staking before first epoch
     config.index += 1;
 
-    let duration = config.epoch_duration;
+    let mut duration = 0;
+
+    if index == 0 {
+        duration = 6 * 60 * 60; // 6 hours
+        require!(reward_amount == 0, RichieError::InvalidRewardAmount);
+    } else {
+        duration = config.epoch_duration;
+        require!(reward_amount > 0, RichieError::InvalidRewardAmount);
+    }
 
     epoch.index = index;
     epoch.staked_start_time = clock.unix_timestamp;
     epoch.stake_duration = duration;
     epoch.staked_end_time = epoch.staked_start_time + duration;
 
-    // Transfer tokens
-    let cpi_accounts = Transfer {
-        from: ctx.accounts.reward_mint_token_account.to_account_info(),
-        to: ctx.accounts.reward_vault.to_account_info(),
-        authority: owner.to_account_info(),
-    };
-    let cpi_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts);
-    transfer(cpi_ctx, reward_amount)?;
+    if index > 0 {
+        // Transfer tokens
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.reward_mint_token_account.to_account_info(),
+            to: ctx.accounts.reward_vault.to_account_info(),
+            authority: owner.to_account_info(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts);
+        transfer(cpi_ctx, reward_amount)?;
+    }
 
     epoch.reward = reward_amount;
     epoch.total_staked_amount = config.total_staked;
@@ -172,10 +182,15 @@ pub fn manage_staker_reward(ctx: Context<ManageStakerReward>, index: u64) -> Res
         }
     }
 
-    user_stake.pending_reward = user_stake.pending_reward.saturating_add(reward_sum);
+    let is_epoch_zero = epoch.index == 0;
 
-    if !epoch.claimable {
-        epoch.claimable = true;
+    if !is_epoch_zero {
+        user_stake.pending_reward = user_stake.pending_reward.saturating_add(reward_sum);
+        if !epoch.claimable {
+            epoch.claimable = true;
+        }
+    } else {
+        config.total_curve = config.total_staked * config.epoch_duration as u64;
     }
 
     Ok(())

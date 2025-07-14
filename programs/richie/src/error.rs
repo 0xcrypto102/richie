@@ -10,6 +10,8 @@ pub enum RichieError {
     InsufficientStake,
     #[msg("Epoch duration has not passed yet.")]
     EpochTooSoon,
+    #[msg("Invalid reward amount to create new epoch.")]
+    InvalidRewardAmount,
     #[msg("No reward to claim.")]
     NoReward,
     #[msg("This is invalid time to stake.")]

@@ -64,11 +64,18 @@ pub fn stake(ctx: Context<Stake>, index: u64, amount: u64, lock_period: u8) -> R
     let epoch = &mut ctx.accounts.epoch;
     let stakes = &mut ctx.accounts.stakes;
 
-    require!(
-        clock.unix_timestamp >= epoch.staked_start_time &&
-        clock.unix_timestamp <= epoch.staked_start_time + epoch.stake_duration,
-        RichieError::InvalidStakeTime
-    );
+    if index == 0 {
+        // Pre-epoch staking allowed any time with lock_period = 1
+        require!(lock_period == 1, RichieError::InvalidLockPeriod);
+    } else {
+        // Normal staking logic for active epochs
+        require!(index == config.index, RichieError::InvalidEpochIndex);
+        require!(
+            clock.unix_timestamp >= epoch.staked_start_time &&
+            clock.unix_timestamp <= epoch.staked_start_time + epoch.stake_duration,
+            RichieError::InvalidStakeTime
+        );
+    }
     require!(index == config.index, RichieError::InvalidEpochIndex);
 
     if user_stake.stake_entries.is_empty() {
@@ -76,27 +83,54 @@ pub fn stake(ctx: Context<Stake>, index: u64, amount: u64, lock_period: u8) -> R
         stakes.list.push(user_stake.key());
     }
 
-    let available_time = epoch.stake_duration - (clock.unix_timestamp - epoch.staked_start_time);
-    let multiplier = get_multiplier(config, lock_period)?; // e.g., 150 for 1.5x
-
-    let base_curve = amount * available_time as u64;
-    let boosted_curve = base_curve * multiplier / 100; // Apply multiplier as percentage
+    let (base_curve, boosted_curve, multiplier) = if index == 0 {
+        // Skip curve calculation for pre-epoch stake
+        (0, 0, 0)
+    } else {
+        let available_time = epoch.stake_duration - (clock.unix_timestamp - epoch.staked_start_time);
+        let multiplier = get_multiplier(config, lock_period)?;
+        let base_curve = amount * available_time as u64;
+        let boosted_curve = base_curve * multiplier / 100;
+        (base_curve, boosted_curve, multiplier)
+    };
 
     // Append new stake entry
-    user_stake.stake_entries.push(StakeEntry {
-        amount,
-        last_staked_epoch_index: index,
-        lock_period,
-        multiplier,
-        base_curve,
-        boosted_curve,
-        calculated_index: 0
-    });
+    if index == 0 {
+        if let Some(entry) = user_stake
+            .stake_entries
+            .iter_mut()
+            .find(|e| e.last_staked_epoch_index == 0)
+        {
+            entry.amount += amount;
+            // Optional: update base/boosted_curve if you want to accumulate (but likely 0 for epoch 0)
+        } else {
+            user_stake.stake_entries.push(StakeEntry {
+                amount,
+                last_staked_epoch_index: index,
+                lock_period,
+                multiplier,
+                base_curve,
+                boosted_curve,
+                calculated_index: 0,
+            });
+        }
+    } else {
+        user_stake.stake_entries.push(StakeEntry {
+            amount,
+            last_staked_epoch_index: index,
+            lock_period,
+            multiplier,
+            base_curve,
+            boosted_curve,
+            calculated_index: 0,
+        });
+    }
 
     // Update epoch stats
-    epoch.total_curve += boosted_curve;
-    epoch.total_staked_amount += amount;
-
+    if index != 0 {
+        epoch.total_curve += boosted_curve;
+        epoch.total_staked_amount += amount;
+    }
     // Transfer tokens
     let cpi_accounts = Transfer {
         from: ctx.accounts.from_token_account.to_account_info(),

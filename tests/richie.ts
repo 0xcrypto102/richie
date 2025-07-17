@@ -39,7 +39,7 @@ describe("richie", () => {
   it("Is initialized stake vault!", async () => {
     try {
       const aprBps = 10;
-      const epochDuration = 300; // 300 seconds
+      const epochDuration = 14 * 3600 * 6; // 6 hours
       const initStakeVaultTx = await program.rpc.initializeStakeVault(
         new anchor.BN(aprBps),
         new anchor.BN(epochDuration), {
@@ -80,10 +80,126 @@ describe("richie", () => {
       console.log("error", error);
     }
   });
-  
+  it("Create the pre staking", async() => {
+    try {
+      const index = new anchor.BN(0);
+      const rewardAmount = 0; // 100 tokens as reward
+
+      const [epoch] = PublicKey.findProgramAddressSync(
+        [Buffer.from("epoch"), index.toArrayLike(Buffer, "le", 8)],
+        program.programId
+      );
+
+      const rewardMintTokenAccount = getAssociatedTokenAddressSync(
+        rewardTokenMint,
+        owner.publicKey
+      );
+
+      const tx = await program.rpc.toggle(
+        index,
+        new anchor.BN(rewardAmount), {
+          accounts: {
+            owner: owner.publicKey,
+            config,
+            epoch,
+            rewardMint: rewardTokenMint,
+            rewardMintTokenAccount,
+            rewardVault,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId
+          },
+          signers: [owner]
+        }
+      );
+      console.log("tx->", tx)
+    } catch (error) {
+      console.log("error->", error);
+    }
+  });
+  it("stake in pre-staking", async() => {
+    try {
+      const index = new anchor.BN(0);
+      const amount = 20 * 10 ** 9;
+      const [userStake] = PublicKey.findProgramAddressSync(
+        [Buffer.from("user"), user1.publicKey.toBuffer()],
+        program.programId
+      );
+      const fromTokenAccount = getAssociatedTokenAddressSync(
+        stakeTokenMint,
+        user1.publicKey
+      );
+      const [epoch] = PublicKey.findProgramAddressSync(
+        [Buffer.from("epoch"), index.toArrayLike(Buffer, "le", 8)],
+        program.programId
+      );
+      const lockPeriod = 1;
+      console.log(await program.account.config.fetch(config));
+      const tx = await program.rpc.stake(
+        index,
+        new anchor.BN(amount), 
+        lockPeriod, {
+          accounts: {
+            user: user1.publicKey,
+            config,
+            stakeTokenMint,
+            userStake,
+            fromTokenAccount,
+            stakeVault,
+            epoch,
+            stakes,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId
+          },
+          signers: [user1]
+        }
+      );
+      console.log("tx->", tx);
+      const userStakeInfo = await program.account.userStake.fetch(userStake);
+      console.log("userStakeInfo->", userStakeInfo);
+    } catch (error) {
+      console.log("error:", error);
+    }
+  });
+
+  it("Call Manage rewards before start first epoch", async() => {
+    try {
+      const users = await program.account.userStake.all();
+      for(let i = 0; i<users.length; i++) {
+        const user = users[i];
+        const index = new anchor.BN(0);
+        const userStake = user.publicKey
+     
+        const [epoch] = PublicKey.findProgramAddressSync(
+          [Buffer.from("epoch"), index.toArrayLike(Buffer, "le", 8)],
+          program.programId
+        );
+
+        const tx = await program.rpc.manageStakerReward(
+          index,
+          {
+            accounts: {
+              admin: owner.publicKey,
+              config,
+              epoch,
+              user: user.account.owner,
+              userStake,
+              stakes,
+              tokenProgram: TOKEN_PROGRAM_ID,
+              systemProgram: SystemProgram.programId
+            },
+            signers: [owner]
+          }
+        );
+        console.log("tx->", tx);
+      }
+    } catch (error) {
+      console.log("error:", error);
+    }
+  });
+  */
   it("Create the first epoch", async() => {
     try {
-      const index = new anchor.BN(1);
+      const index = new anchor.BN(2);
       const rewardAmount = 100 * 10 ** 9; // 100 tokens as reward
 
       const [epoch] = PublicKey.findProgramAddressSync(
@@ -117,7 +233,6 @@ describe("richie", () => {
       console.log("error->", error);
     }
   });
-  */
   /*
   it("stake in epoch1", async() => {
     try {
@@ -211,6 +326,7 @@ describe("richie", () => {
     }
   });
   */
+  /*
   it("user 1 withdraw token", async() => {
     try {
       const index = new anchor.BN(1);
@@ -250,7 +366,8 @@ describe("richie", () => {
       console.log("error:", error);
     }
   });
- /*
+  */
+  /*
   it("Manage rewards", async() => {
     try {
       const users = await program.account.userStake.all();
@@ -287,8 +404,7 @@ describe("richie", () => {
     }
   });
   */
- /*
-
+  /*
   it("User 1 Cliam the reward", async() => {
     try {
       const index = new anchor.BN(1);
@@ -353,6 +469,7 @@ describe("richie", () => {
       console.log("error:", error);
     }
   });
+ 
   it("Update duration", async() => {
     try {
       const duration = 14 * 24 * 60 * 60; // 14 days
@@ -367,6 +484,6 @@ describe("richie", () => {
     } catch (error) {
       console.log("error:", error);
     }
-  })
+  });
   */
 });

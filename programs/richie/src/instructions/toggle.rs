@@ -93,17 +93,17 @@ pub fn toggle(ctx: Context<Toggle>, index: u64, reward_amount: u64) -> Result<()
     let owner = &mut ctx.accounts.owner;
 
     require!(owner.key() == config.admin, RichieError::UnAuthorized);
-    require!(index == config.index, RichieError::InvalidEpochIndex); // we use index 0 as staking before first epoch
-    config.index += 1;
-
     let mut duration = 0;
 
     if index == 0 {
-        duration = 6 * 60 * 60; // 6 hours
         require!(reward_amount == 0, RichieError::InvalidRewardAmount);
+        require!(index == config.index, RichieError::InvalidEpochIndex); // we use index 0 as staking before first epoch
+        duration = 6 * 60 * 60; // 6 hours
     } else {
-        duration = config.epoch_duration;
         require!(reward_amount > 0, RichieError::InvalidRewardAmount);
+        require!(index == config.index + 1, RichieError::InvalidEpochIndex); // we use index 0 as staking before first epoch
+        duration = config.epoch_duration;
+        config.index += 1;
     }
 
     epoch.index = index;
@@ -124,7 +124,12 @@ pub fn toggle(ctx: Context<Toggle>, index: u64, reward_amount: u64) -> Result<()
 
     epoch.reward = reward_amount;
     epoch.total_staked_amount = config.total_staked;
-    epoch.total_curve = config.total_curve;
+    if index == 1 {
+        epoch.total_curve = epoch.total_staked_amount * epoch.stake_duration as u64;
+    } else {
+        epoch.total_curve = config.total_curve;
+    }
+
     config.total_curve = 0;
     
     Ok(())
@@ -154,7 +159,15 @@ pub fn manage_staker_reward(ctx: Context<ManageStakerReward>, index: u64) -> Res
         if entry.calculated_index == index {
             msg!("It was already calculated")
         } else {
-            if entry.last_staked_epoch_index + entry.lock_period as u64 - 1 >= index {
+            let mut last_staked_epoch_index = 0;
+            
+            if entry.last_staked_epoch_index == 0 {
+                last_staked_epoch_index = 1;
+            } else {
+                last_staked_epoch_index = entry.last_staked_epoch_index;
+            }
+
+            if last_staked_epoch_index + entry.lock_period as u64 - 1 >= index {
                 let reward_share = (entry.boosted_curve as u128)
                     .checked_mul(epoch.reward as u128)
                     .unwrap_or(0)
@@ -189,9 +202,7 @@ pub fn manage_staker_reward(ctx: Context<ManageStakerReward>, index: u64) -> Res
         if !epoch.claimable {
             epoch.claimable = true;
         }
-    } else {
-        config.total_curve = config.total_staked * config.epoch_duration as u64;
-    }
+    } 
 
     Ok(())
 }

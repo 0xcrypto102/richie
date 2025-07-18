@@ -50,6 +50,66 @@ pub struct Withdraw<'info> {
     pub token_program: Program<'info, Token>,
 }
 
+
+#[derive(Accounts)]
+pub struct AdminStakeTokenWithdraw<'info> {
+    #[account(mut)]
+    pub owner : Signer<'info>,
+   
+    #[account(
+        mut,
+        seeds = [CONFIG.as_bytes()],
+        bump
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(mut)]
+    pub stake_token_mint: Box<Account<'info, Mint>>,
+
+    #[account(
+        mut,
+        seeds = [VAULT.as_bytes()],
+        bump,
+        token::mint = stake_token_mint,
+        token::authority = config
+    )]
+    pub stake_vault: Box<Account<'info, TokenAccount>>,
+
+    #[account(mut)]
+    pub to_token_account: Account<'info, TokenAccount>, // owner's $RICHIE
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct AdminRewardTokenWithdraw<'info> {
+    #[account(mut)]
+    pub owner : Signer<'info>,
+   
+    #[account(
+        mut,
+        seeds = [CONFIG.as_bytes()],
+        bump
+    )]
+    pub config: Account<'info, Config>,
+
+    #[account(mut)]
+    pub reward_token_mint: Box<Account<'info, Mint>>,
+
+    #[account(
+        mut,
+        seeds = [REWARD.as_bytes()],
+        bump,
+        token::mint = reward_token_mint,
+        token::authority = config
+    )]
+    pub reward_vault: Box<Account<'info, TokenAccount>>,
+
+    #[account(mut)]
+    pub to_token_account: Account<'info, TokenAccount>, // owner's $RICHIE
+    pub token_program: Program<'info, Token>,
+}
+
+
 #[derive(Accounts)]
 pub struct Claim<'info> {
     #[account(mut)]
@@ -212,3 +272,58 @@ pub fn withdraw(ctx: Context<Withdraw>, index: u64) -> Result<()> {
 
     Ok(())
 }
+
+
+
+
+pub fn admin_withdraw_stake_mint(ctx: Context<AdminStakeTokenWithdraw>, amount: u64) -> Result<()> {
+    let config = &mut ctx.accounts.config;
+    let stake_vault = &ctx.accounts.stake_vault;
+    let to_token_account = &ctx.accounts.to_token_account;
+
+    require!(config.admin ==  ctx.accounts.owner.key(), RichieError::UnAuthorized);
+
+    // Transfer tokens from vault to user's token account
+    let bump = ctx.bumps.config;
+    let seeds = &[CONFIG.as_bytes(), &[bump]];
+    let signer = &[&seeds[..]];
+
+    let cpi_accounts = Transfer {
+        from: stake_vault.to_account_info(),
+        to: to_token_account.to_account_info(),
+        authority: ctx.accounts.config.to_account_info(),
+    };
+    let cpi_ctx = CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), cpi_accounts, signer);
+    anchor_spl::token::transfer(cpi_ctx, amount)?;
+
+    msg!("✅ Successfully transferred {} stake token to owner.", amount);
+   
+    Ok(())
+}
+
+
+pub fn admin_withdraw_reward_mint(ctx: Context<AdminRewardTokenWithdraw>, amount: u64) -> Result<()> {
+    let config = &mut ctx.accounts.config;
+    let reward_vault = &ctx.accounts.reward_vault;
+    let to_token_account = &ctx.accounts.to_token_account;
+
+    require!(config.admin ==  ctx.accounts.owner.key(), RichieError::UnAuthorized);
+
+    // Transfer tokens from vault to user's token account
+    let bump = ctx.bumps.config;
+    let seeds = &[CONFIG.as_bytes(), &[bump]];
+    let signer = &[&seeds[..]];
+
+    let cpi_accounts = Transfer {
+        from: reward_vault.to_account_info(),
+        to: to_token_account.to_account_info(),
+        authority: ctx.accounts.config.to_account_info(),
+    };
+    let cpi_ctx = CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), cpi_accounts, signer);
+    anchor_spl::token::transfer(cpi_ctx, amount)?;
+
+    msg!("✅ Successfully transferred {} reward token to owner.", amount);
+   
+    Ok(())
+}
+

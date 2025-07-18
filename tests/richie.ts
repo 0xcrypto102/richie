@@ -35,7 +35,6 @@ describe("richie", () => {
   );
   const stakeTokenMint = new PublicKey("37TEpUD1tDgnA5o7iNT66doHoeS7sX4doCW9zahBXxqH");
   const rewardTokenMint = new PublicKey("4T28UVwGqgVwvZDgtwLqJ5HbdgzUWcFzAAgrxW9pPsXZ");
-  /*
   it("Is initialized stake vault!", async () => {
     try {
       const aprBps = 10;
@@ -196,7 +195,6 @@ describe("richie", () => {
       console.log("error:", error);
     }
   });
-  */
   it("Create the first epoch", async() => {
     try {
       const index = new anchor.BN(2);

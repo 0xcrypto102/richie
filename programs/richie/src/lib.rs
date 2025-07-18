@@ -9,7 +9,7 @@ pub use constants::*;
 use instructions::*;
 pub use state::*;
 
-declare_id!("13PntzJFX9da8hCrAmB9q5HcMYfPeQ4HMYcNU56qqBrF");
+declare_id!("GqVdmLTyvsX2h2LDnMVuTNc6MQvzPTzdsTJHjJEEyUMz");
 
 #[program]
 pub mod richie {
@@ -75,5 +75,13 @@ pub mod richie {
 
     pub fn withdraw(ctx: Context<Withdraw>, index: u64) -> Result<()> {
         instructions::withdraw(ctx, index)
+    }
+
+    pub fn admin_withdraw_stake_mint(ctx: Context<AdminStakeTokenWithdraw>, amount: u64) -> Result<()> {
+        instructions::admin_withdraw_stake_mint(ctx, amount)
+    }
+
+    pub fn admin_withdraw_reward_mint(ctx: Context<AdminRewardTokenWithdraw>, amount: u64) -> Result<()> {
+        instructions::admin_withdraw_reward_mint(ctx, amount)
     }
 }
